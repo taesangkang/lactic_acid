@@ -1,0 +1,24 @@
+CREATE TABLE Player (
+    ID CHAR(8) PRIMARY KEY,
+    Name VARCHAR(255) NOT NULL,
+    Rating FLOAT NOT NULL CHECK (Rating >= 0)
+);
+
+CREATE TABLE Game (
+    Time DATETIME NOT NULL,
+    Acidic CHAR(8) NOT NULL,
+    Alkaline CHAR(8) NOT NULL,
+    AcScore INT CHECK (AcScore BETWEEN 0 AND 10),
+    AkScore INT CHECK (AkScore BETWEEN 0 AND 10),
+    AcRating FLOAT CHECK (AcRating >= 0),
+    AkRating FLOAT CHECK (AkRating >= 0),
+    Tournament VARCHAR(40),
+    PRIMARY KEY (Time, Acidic)
+);
+
+CREATE TABLE Tournament (
+    Name VARCHAR(40) PRIMARY KEY,
+    Organizer CHAR(8) NOT NULL
+);
+
+
