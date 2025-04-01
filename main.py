@@ -1,4 +1,3 @@
-# In main.py
 import database_connection as db
 from game_manager import GameManager
 from tournament_handler import TournamentHandler
