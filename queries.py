@@ -3,7 +3,6 @@ def get_player_info(connection, player_id):
     try:
         cursor.execute("SELECT Name, Rating FROM Player WHERE ID = %s", (player_id,))
         player = cursor.fetchone()
-
         if not player:
             print("None")
             return
@@ -11,38 +10,26 @@ def get_player_info(connection, player_id):
         name, rating = player
 
         cursor.execute("""
-            SELECT COUNT(*) FROM Game 
+            SELECT 
+                COUNT(*), 
+                SUM(CASE WHEN 
+                    (Acidic = %s AND AcScore > AkScore) OR 
+                    (Alkaline = %s AND AkScore > AcScore) 
+                THEN 1 ELSE 0 END),
+                SUM(CASE WHEN 
+                    ((Acidic = %s) OR (Alkaline = %s)) AND AcScore = AkScore
+                THEN 1 ELSE 0 END)
+            FROM Game 
             WHERE (Acidic = %s OR Alkaline = %s) 
             AND AcScore IS NOT NULL AND AkScore IS NOT NULL
-        """, (player_id, player_id))
-        games_played = cursor.fetchone()[0]
+        """, (player_id, player_id, player_id, player_id, player_id, player_id))
 
-        cursor.execute("""
-            SELECT COUNT(*) FROM Game 
-            WHERE ((Acidic = %s AND AcScore > AkScore) 
-                  OR (Alkaline = %s AND AkScore > AcScore))
-            AND AcScore IS NOT NULL AND AkScore IS NOT NULL
-        """, (player_id, player_id))
-        wins = cursor.fetchone()[0]
-
-        cursor.execute("""
-            SELECT COUNT(*) FROM Game 
-            WHERE ((Acidic = %s) OR (Alkaline = %s)) 
-            AND AcScore = AkScore
-            AND AcScore IS NOT NULL AND AkScore IS NOT NULL
-        """, (player_id, player_id))
-        ties = cursor.fetchone()[0]
-
-        cursor.execute("""
-            SELECT COUNT(*) FROM Game 
-            WHERE ((Acidic = %s AND AcScore < AkScore) 
-                  OR (Alkaline = %s AND AkScore < AcScore))
-            AND AcScore IS NOT NULL AND AkScore IS NOT NULL
-        """, (player_id, player_id))
-        losses = cursor.fetchone()[0]
+        stats = cursor.fetchone()
+        games_played, wins, ties = stats[0] or 0, stats[1] or 0, stats[2] or 0
+        losses = games_played - wins - ties
 
         print(f"{name},{rating:.2f},{games_played},{wins},{ties},{losses}")
-    except Exception:
+    except:
         print("None")
     finally:
         cursor.close()
@@ -66,7 +53,6 @@ def list_tournament(connection, tournament_name):
         """, (tournament_name,))
 
         games = cursor.fetchall()
-
         if not games:
             print("None")
             return
@@ -77,7 +63,7 @@ def list_tournament(connection, tournament_name):
             ak_score_str = str(ak_score) if ak_score is not None else ""
             print(
                 f"{date},{time},{acidic_name},{acidic_id},{alkaline_name},{alkaline_id},{ac_score_str},{ak_score_str}")
-    except Exception:
+    except:
         print("None")
     finally:
         cursor.close()
@@ -102,7 +88,6 @@ def list_head_to_head(connection, player1_id, player2_id):
         """, (player1_id, player2_id, player2_id, player1_id))
 
         games = cursor.fetchall()
-
         if not games:
             print("None")
             return
@@ -113,7 +98,7 @@ def list_head_to_head(connection, player1_id, player2_id):
             ak_score_str = str(ak_score) if ak_score is not None else ""
             print(
                 f"{date},{time},{acidic_name},{acidic_id},{alkaline_name},{alkaline_id},{ac_score_str},{ak_score_str}")
-    except Exception:
+    except:
         print("None")
     finally:
         cursor.close()
@@ -126,59 +111,38 @@ def rank_players_by_performance(connection, start_date, end_date):
         end_datetime = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]} 23:59:59"
 
         cursor.execute("""
-            SELECT DISTINCT p.ID, p.Name
+            SELECT p.ID, p.Name,
+                COUNT(*) AS games,
+                SUM(CASE WHEN 
+                    (p.ID = g.Acidic AND g.AcScore > g.AkScore) OR 
+                    (p.ID = g.Alkaline AND g.AkScore > g.AcScore) 
+                THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN g.AcScore = g.AkScore THEN 1 ELSE 0 END) AS ties
             FROM Player p
             JOIN Game g ON p.ID = g.Acidic OR p.ID = g.Alkaline
             WHERE g.Time BETWEEN %s AND %s
             AND g.AcScore IS NOT NULL AND g.AkScore IS NOT NULL
+            GROUP BY p.ID, p.Name
         """, (start_datetime, end_datetime))
 
         players = cursor.fetchall()
-
         if not players:
             print("None")
             return
 
         player_stats = []
-
-        for player_id, player_name in players:
-            cursor.execute("""
-                SELECT COUNT(*) FROM Game 
-                WHERE (Acidic = %s OR Alkaline = %s) 
-                AND Time BETWEEN %s AND %s
-                AND AcScore IS NOT NULL AND AkScore IS NOT NULL
-            """, (player_id, player_id, start_datetime, end_datetime))
-            games_played = cursor.fetchone()[0]
-
-            cursor.execute("""
-                SELECT COUNT(*) FROM Game 
-                WHERE ((Acidic = %s AND AcScore > AkScore) 
-                      OR (Alkaline = %s AND AkScore > AcScore))
-                AND Time BETWEEN %s AND %s
-                AND AcScore IS NOT NULL AND AkScore IS NOT NULL
-            """, (player_id, player_id, start_datetime, end_datetime))
-            wins = cursor.fetchone()[0]
-
-            cursor.execute("""
-                SELECT COUNT(*) FROM Game 
-                WHERE ((Acidic = %s) OR (Alkaline = %s)) 
-                AND AcScore = AkScore
-                AND Time BETWEEN %s AND %s
-                AND AcScore IS NOT NULL AND AkScore IS NOT NULL
-            """, (player_id, player_id, start_datetime, end_datetime))
-            ties = cursor.fetchone()[0]
-
-            losses = games_played - wins - ties
+        for player_id, player_name, games, wins, ties in players:
+            wins = wins or 0
+            ties = ties or 0
+            losses = games - wins - ties
             points = 2 * wins + ties
-
-            player_stats.append((player_id, player_name, games_played, wins, ties, losses, points))
+            player_stats.append((player_id, player_name, games, wins, ties, losses, points))
 
         player_stats.sort(key=lambda x: x[6], reverse=True)
 
-        for stat in player_stats:
-            player_id, player_name, games_played, wins, ties, losses, points = stat
-            print(f"{player_id},{player_name},{games_played},{wins},{ties},{losses},{points}")
-    except Exception:
+        for player_data in player_stats:
+            print(",".join(str(x) for x in player_data))
+    except:
         print("None")
     finally:
         cursor.close()
